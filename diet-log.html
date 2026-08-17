@@ -23,8 +23,12 @@
   .card { margin: 0 20px 16px; background: #fff; border: 1px solid #EDEDED; border-radius: 6px; padding: 16px; }
   .card-label { font-size: 12px; font-weight: 700; margin-bottom: 10px; color: #8A8A8A; text-transform: uppercase; letter-spacing: 0.04em; }
 
-  input[type="date"], input[type="text"], input[type="number"] { padding: 10px; border-radius: 4px; border: 1px solid #EDEDED; font-size: 14px; font-family: inherit; font-weight: 600; background: #fff; color: #1A1A1A; }
+  input[type="date"], input[type="text"], input[type="number"], select { padding: 10px; border-radius: 4px; border: 1px solid #EDEDED; font-size: 14px; font-family: inherit; font-weight: 600; background: #fff; color: #1A1A1A; }
   input[type="date"] { width: 100%; margin-bottom: 12px; }
+  #gymSelect { padding: 14px 12px; font-size: 16px; height: 48px; }
+  .gym-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+  .gym-tab { flex: 1; padding: 16px 0; text-align: center; border-radius: 6px; border: 1px solid #EDEDED; background: #fff; font-weight: 700; font-size: 13px; letter-spacing: 0.03em; color: #8A8A8A; cursor: pointer; }
+  .gym-tab.active { background: #D93636; border-color: #D93636; color: #fff; }
 
   .food-form { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
   .food-form input[type="text"] { grid-column: 1 / -1; }
@@ -100,6 +104,28 @@
     <div id="estimateNote" style="font-size:10px; color:#B8AFAF; font-weight:600; margin-bottom:8px;"></div>
     <button id="addBtn">追加</button>
     <div id="foodList"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">今日の運動</div>
+    <div class="card-label" style="margin-bottom:6px; text-transform:none; font-size:11px;">ジムトレーニング(PPL、3セット×10回)</div>
+    <select id="gymSelect" style="display:none;">
+      <option value="">なし</option>
+      <option value="push">PUSH</option>
+      <option value="pull">PULL</option>
+      <option value="leg">LEG</option>
+    </select>
+    <div class="gym-tabs" id="gymTabs">
+      <div class="gym-tab" data-val="">なし</div>
+      <div class="gym-tab" data-val="push">PUSH</div>
+      <div class="gym-tab" data-val="pull">PULL</div>
+      <div class="gym-tab" data-val="leg">LEG</div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600;">
+      <input type="checkbox" id="walkCheck" style="width:18px; height:18px;" />
+      ウォーキング30分を行った
+    </label>
+    <div style="font-size:10px; color:#B8AFAF; font-weight:600; margin-top:8px;">運動による消費カロリーは、下の「消費カロリー(TDEE)」に自動で上乗せされます</div>
   </div>
 
   <div class="card">
@@ -205,6 +231,22 @@ function updateUnitLabel(){
 const PROFILE = { age: 33, heightCm: 175, sex: "male", activityFactor: 1.2 }; // デスクワーク中心
 const KCAL_PER_KG = 7700;
 
+// ---- 運動による消費カロリー(MET法) ----
+// 筋トレ(PPL、各種目3セット×10回)の推定所要時間(分)。種目数から概算。
+const GYM_DURATION_MIN = { push: 60, pull: 50, leg: 35 };
+const GYM_MET = 6.0;   // 筋トレ(フリーウェイト、やや高強度)
+const WALK_MET = 3.5;  // ウォーキング(普通の速さ)
+const WALK_DURATION_MIN = 30;
+
+function metKcal(met, weightKg, minutes){ return met * 3.5 * weightKg / 200 * minutes; }
+function computeExerciseBurn(exercise, weightKg){
+  if (!exercise) return 0;
+  let total = 0;
+  if (exercise.gym && GYM_DURATION_MIN[exercise.gym]) total += metKcal(GYM_MET, weightKg, GYM_DURATION_MIN[exercise.gym]);
+  if (exercise.walk) total += metKcal(WALK_MET, weightKg, WALK_DURATION_MIN);
+  return total;
+}
+
 // ---- 体重管理サイトと同じ目標トラジェクトリ(計画上の目標体重の代用に使用) ----
 const CHECKPOINTS = [
   { date: "2026-08-17", weight: 90.2 },
@@ -248,7 +290,7 @@ function bmr(weightKg){
   return PROFILE.sex === "male" ? base + 5 : base - 161;
 }
 
-const STORE_KEY = "diet-log"; // { "YYYY-MM-DD": [{name,p,f,c}] }
+const STORE_KEY = "diet-log"; // { "YYYY-MM-DD": { items:[{name,p,f,c}], exercise:{gym,walk} } }
 function loadDiet(){ try { const raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; } }
 function saveDiet(d){ localStorage.setItem(STORE_KEY, JSON.stringify(d)); }
 
@@ -258,7 +300,16 @@ let pfcChartInstance = null;
 function kcalOf(item){ return item.p*4 + item.f*9 + item.c*4; }
 
 function currentDate(){ return document.getElementById("inputDate").value || todayStr(); }
-function currentItems(){ return diet[currentDate()] || []; }
+
+// 過去データ(配列のみの旧形式)にも対応した取得ヘルパー
+function getDayData(date){
+  let d = diet[date];
+  if (!d) d = { items: [], exercise: { gym: null, walk: false } };
+  else if (Array.isArray(d)) d = { items: d, exercise: { gym: null, walk: false } };
+  else { d.items = d.items || []; d.exercise = d.exercise || { gym: null, walk: false }; }
+  return d;
+}
+function currentItems(){ return getDayData(currentDate()).items; }
 
 function renderFoodList(){
   const items = currentItems();
@@ -281,9 +332,9 @@ function renderFoodList(){
   el.querySelectorAll(".food-del").forEach(btn => {
     btn.addEventListener("click", () => {
       const idx = Number(btn.dataset.idx);
-      const list = diet[currentDate()] || [];
-      list.splice(idx, 1);
-      diet[currentDate()] = list;
+      const day = getDayData(currentDate());
+      day.items.splice(idx, 1);
+      diet[currentDate()] = day;
       saveDiet(diet);
       renderAll();
     });
@@ -301,11 +352,15 @@ function renderSummary(){
 
   const { weight, source } = getWeightEstimate(currentDate());
   const bmrVal = bmr(weight);
-  const tdee = bmrVal * PROFILE.activityFactor;
+  const tdeeBase = bmrVal * PROFILE.activityFactor;
+  const exercise = getDayData(currentDate()).exercise;
+  const exerciseBurn = computeExerciseBurn(exercise, weight);
+  const tdee = tdeeBase + exerciseBurn;
 
   document.getElementById("tdeeVal").textContent = `${Math.round(tdee)}kcal`;
   document.getElementById("bmrVal").textContent = `${Math.round(bmrVal)}kcal`;
-  document.getElementById("weightNote").textContent = `体重 ${weight.toFixed(1)}kg(${source})を使用してTDEEを計算`;
+  const exerciseNote = exerciseBurn > 0 ? `(安静時${Math.round(tdeeBase)}kcal + 運動${Math.round(exerciseBurn)}kcal)` : "";
+  document.getElementById("weightNote").textContent = `体重 ${weight.toFixed(1)}kg(${source})を使用してTDEEを計算 ${exerciseNote}`;
   document.getElementById("weightNote").className = "weight-note" + (source === "実測" ? " auto" : "");
 
   const diff = totalKcal - tdee; // 正=オーバー、負=不足(減量に有利)
@@ -351,13 +406,14 @@ function renderTable(){
     return;
   }
   const rows = dates.map(date => {
-    const items = diet[date];
+    const day = getDayData(date);
+    const items = day.items;
     const totalP = items.reduce((s,i)=>s+i.p,0);
     const totalF = items.reduce((s,i)=>s+i.f,0);
     const totalC = items.reduce((s,i)=>s+i.c,0);
     const totalKcal = totalP*4 + totalF*9 + totalC*4;
     const { weight } = getWeightEstimate(date);
-    const tdee = bmr(weight) * PROFILE.activityFactor;
+    const tdee = bmr(weight) * PROFILE.activityFactor + computeExerciseBurn(day.exercise, weight);
     const diff = totalKcal - tdee;
     const predKg = -diff / KCAL_PER_KG;
     return { date, totalKcal, totalP, totalF, totalC, diff, predKg };
@@ -378,7 +434,18 @@ function renderTable(){
     </table>`;
 }
 
+function renderExerciseControls(){
+  const exercise = getDayData(currentDate()).exercise;
+  const val = exercise.gym || "";
+  document.getElementById("gymSelect").value = val;
+  document.querySelectorAll(".gym-tab").forEach(tab => {
+    tab.classList.toggle("active", tab.dataset.val === val);
+  });
+  document.getElementById("walkCheck").checked = !!exercise.walk;
+}
+
 function renderAll(){
+  renderExerciseControls();
   renderFoodList();
   renderSummary();
   renderTable();
@@ -388,18 +455,19 @@ document.querySelectorAll(".preset-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const preset = MEAL_PRESETS[btn.dataset.preset];
     const date = currentDate();
-    diet[date] = diet[date] || [];
+    const day = getDayData(date);
     preset.items.forEach(({ name, qty }) => {
       const entry = FOOD_DB[name];
       if (!entry) return;
       const ratio = qty / entry.baseAmount;
-      diet[date].push({
+      day.items.push({
         name: `${name} ${qty}${entry.unit}`,
         p: Number((entry.p * ratio).toFixed(1)),
         f: Number((entry.f * ratio).toFixed(1)),
         c: Number((entry.c * ratio).toFixed(1)),
       });
     });
+    diet[date] = day;
     saveDiet(diet);
     renderAll();
   });
@@ -433,8 +501,9 @@ document.getElementById("addBtn").addEventListener("click", () => {
   const c = parseFloat(document.getElementById("foodC").value) || 0;
   if (!name && p===0 && f===0 && c===0) return;
   const date = currentDate();
-  diet[date] = diet[date] || [];
-  diet[date].push({ name, p, f, c });
+  const day = getDayData(date);
+  day.items.push({ name, p, f, c });
+  diet[date] = day;
   saveDiet(diet);
   document.getElementById("foodName").value = "";
   document.getElementById("foodQty").value = "";
@@ -444,6 +513,28 @@ document.getElementById("addBtn").addEventListener("click", () => {
   document.getElementById("estimateNote").textContent = "";
   document.getElementById("unitLabel").textContent = "g";
   renderAll();
+});
+
+document.querySelectorAll(".gym-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    const date = currentDate();
+    const day = getDayData(date);
+    day.exercise.gym = tab.dataset.val || null;
+    diet[date] = day;
+    saveDiet(diet);
+    renderExerciseControls();
+    renderSummary();
+    renderTable();
+  });
+});
+document.getElementById("walkCheck").addEventListener("change", (e) => {
+  const date = currentDate();
+  const day = getDayData(date);
+  day.exercise.walk = e.target.checked;
+  diet[date] = day;
+  saveDiet(diet);
+  renderSummary();
+  renderTable();
 });
 
 document.getElementById("inputDate").addEventListener("change", renderAll);
