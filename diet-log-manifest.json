@@ -1,0 +1,12 @@
+{
+  "name": "FOOD",
+  "short_name": "FOOD",
+  "start_url": "./diet-log.html",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    { "src": "food-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "food-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
