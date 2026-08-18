@@ -134,6 +134,11 @@
       <div class="stat"><div class="stat-label">摂取カロリー合計</div><div class="stat-value" id="totalKcal">0kcal</div></div>
       <div class="stat"><div class="stat-label">消費カロリー(TDEE)</div><div class="stat-value" id="tdeeVal">—</div></div>
     </div>
+    <div class="stat-grid" style="grid-template-columns: repeat(3,1fr); margin-top:10px;">
+      <div class="stat"><div class="stat-label">P合計</div><div class="stat-value" id="totalPVal">0g</div></div>
+      <div class="stat"><div class="stat-label">F合計</div><div class="stat-value" id="totalFVal">0g</div></div>
+      <div class="stat"><div class="stat-label">C合計</div><div class="stat-value" id="totalCVal">0g</div></div>
+    </div>
     <div class="pfc-row" style="margin-top:16px;">
       <div class="pfc-chart-wrap"><canvas id="pfcChart"></canvas></div>
       <div class="pfc-legend" id="pfcLegend"></div>
@@ -349,6 +354,9 @@ function renderSummary(){
   const totalKcal = totalP*4 + totalF*9 + totalC*4;
 
   document.getElementById("totalKcal").textContent = `${Math.round(totalKcal)}kcal`;
+  document.getElementById("totalPVal").textContent = `${totalP.toFixed(1)}g`;
+  document.getElementById("totalFVal").textContent = `${totalF.toFixed(1)}g`;
+  document.getElementById("totalCVal").textContent = `${totalC.toFixed(1)}g`;
 
   const { weight, source } = getWeightEstimate(currentDate());
   const bmrVal = bmr(weight);
